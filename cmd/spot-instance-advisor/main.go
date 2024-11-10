@@ -107,6 +107,13 @@ func getSpotPrices(instanceTypes []string, region string) ([]SpotPrice, error) {
 	return uniqed, nil
 }
 
+// "ranges" is a list of objects as below
+//
+//	[{"index": 0, "label": "<5%", ...}, {"index": 1, "label": "5-10%", ...}, ...]
+//
+// then, create a map that key is "index" and value is "label"
+//
+//	{0: "<5%", 1: "5-10%", ...}
 func createRangesMap(ranges []LabelInfo) map[int]string {
 	rangesMap := make(map[int]string)
 	for _, item := range ranges {
@@ -120,6 +127,7 @@ func getIntrrupData(region string) (map[string]InterruptData, map[int]string, er
 	}
 
 	// fetch spot advisor data
+	// this URL is from https://aws.amazon.com/ec2/spot/instance-advisor/
 	advisorDataUrl := "https://spot-bid-advisor.s3.amazonaws.com/spot-advisor-data.json"
 	resp, err := http.Get(advisorDataUrl)
 	if err != nil {
