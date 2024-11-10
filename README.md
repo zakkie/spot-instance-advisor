@@ -11,7 +11,7 @@ go install github.com/zakkie/spot-instance-advisor/cmd/spot-instance-advisor@lat
 ## Usage
 
 ```
-spot-instance-advisor
+spot-instance-advisor | sort -n -k 2,2 -r
 ```
 
 ### pre-conditions

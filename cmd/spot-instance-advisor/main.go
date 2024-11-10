@@ -15,9 +15,24 @@ type SpotPrice struct {
 	SpotPrice    string `json:"SpotPrice"`
 }
 
-type InstanceData struct {
-	Savings  int `json:"s"`
-	IntrFreq int `json:"r"`
+type InterruptData struct {
+	Savings  int `json:"s"` // Savings
+	IntrFreq int `json:"r"` // Interrupt Frequency
+}
+
+type LabelInfo struct {
+	Index int    `json:"index"`
+	Label string `json:"label"`
+	Dots  int    `json:"dots"`
+	Max   int    `json:"max"`
+}
+
+// root of JSON
+// {"spot_advisor": {"us-west-2": {"Linux": {}}} }
+type AdvisorData struct {
+	Ranges      []LabelInfo                                    `json:"ranges"`
+	SpotAdvisor map[string]map[string]map[string]InterruptData `json:"spot_advisor"`
+	// ignore other keys
 }
 
 func runCommandWithArgs(command []string) (string, error) {
@@ -47,12 +62,12 @@ func removeDuplicates(price []SpotPrice) []SpotPrice {
 	return result
 }
 
-// func getInstanceTypes(region string) ([]string, error) {
-func getInstanceTypes() ([]string, error) {
+func getInstanceTypes(region string) ([]string, error) {
 	// get instance types with 4-8 vCPUs and 16-32 GB memory
 	command := []string{"aws", "ec2", "describe-instance-types",
 		"--filters", "Name=vcpu-info.default-cores,Values=4,5,6,7,8",
 		"Name=memory-info.size-in-mib,Values=16384,32768",
+		"--region", region,
 		"--query", "InstanceTypes[*].InstanceType", "--output", "json"}
 	output, err := runCommandWithArgs(command)
 	if err != nil {
@@ -68,12 +83,13 @@ func getInstanceTypes() ([]string, error) {
 	return instanceTypes, nil
 }
 
-func getSpotPrices(instanceTypes []string) ([]SpotPrice, error) {
+func getSpotPrices(instanceTypes []string, region string) ([]SpotPrice, error) {
 	command_head := []string{"aws", "ec2", "describe-spot-price-history",
 		"--product-descriptions", "Linux/UNIX",
 		"--start-time", time.Now().UTC().Format(time.RFC3339),
 		"--query", "SpotPriceHistory[*].{InstanceType:InstanceType,SpotPrice:SpotPrice}",
 		"--output", "json",
+		"--region", region,
 		"--instance-types"}
 	output, err := runCommandWithArgs(append(command_head, instanceTypes...))
 	if err != nil {
@@ -91,62 +107,65 @@ func getSpotPrices(instanceTypes []string) ([]SpotPrice, error) {
 	return uniqed, nil
 }
 
-func getIntrrupData() (map[string]InstanceData, error) {
+func createRangesMap(ranges []LabelInfo) map[int]string {
+	rangesMap := make(map[int]string)
+	for _, item := range ranges {
+		rangesMap[item.Index] = item.Label
+	}
+	return rangesMap
+}
+
+func getIntrrupData(region string) (map[string]InterruptData, map[int]string, error) {
+	type InterruptDataString struct {
+	}
+
 	// fetch spot advisor data
 	advisorDataUrl := "https://spot-bid-advisor.s3.amazonaws.com/spot-advisor-data.json"
 	resp, err := http.Get(advisorDataUrl)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var advisorData map[string]interface{}
+	var advisorData AdvisorData
 	err = json.NewDecoder(resp.Body).Decode(&advisorData)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// same as `jq -r '.spot_advisor.["us-west-2"].Linux'``
-	regionData, ok := advisorData["spot_advisor"].(map[string]interface{})["us-west-2"].(map[string]interface{})["Linux"]
-	if !ok {
-		return nil, fmt.Errorf("Error: could not find the specified path in the JSON data")
-	}
-	instanceMap := make(map[string]InstanceData)
-	for instanceType, data := range regionData.(map[string]interface{}) {
-		instanceInfo := data.(map[string]interface{})
-		instanceMap[instanceType] = InstanceData{
-			Savings:  int(instanceInfo["s"].(float64)),
-			IntrFreq: int(instanceInfo["r"].(float64)),
-		}
-	}
+	interruptData := advisorData.SpotAdvisor[region]["Linux"]
 
-	return instanceMap, nil
+	return interruptData, createRangesMap(advisorData.Ranges), nil
 }
 
 func main() {
-	instanceTypes, err := getInstanceTypes()
+	region := "us-west-2"
+
+	instanceTypes, err := getInstanceTypes(region)
 	if err != nil {
 		log.Fatalf("Error getting instance types: %s", err)
 	}
 
-	prices, err := getSpotPrices(instanceTypes)
+	prices, err := getSpotPrices(instanceTypes, region)
 	if err != nil {
 		log.Fatalf("Error getting spot prices: %s", err)
 	}
 
-	// join instanceTypes with prices and output it
-	interruptData, err := getIntrrupData()
+	interruptData, rangesMap, err := getIntrrupData(region)
 	if err != nil {
 		log.Fatalf("Error getting interrupt data: %s", err)
 	}
+
+	// join instanceTypes with prices and output it
 	fmt.Printf("%-20s %-10s %-10s %-10s\n", "InstanceType", "SpotPrice", "Savings", "IntrFreq")
 	for _, price := range prices {
 		if data, ok := interruptData[price.InstanceType]; ok {
-			fmt.Printf("%-20s %-10s %-10d %-10d\n", price.InstanceType, price.SpotPrice, data.Savings, data.IntrFreq)
+			fmt.Printf("%-20s %-10s %-10d %-10s\n", price.InstanceType, price.SpotPrice, data.Savings, rangesMap[data.IntrFreq])
 		}
 	}
 }
