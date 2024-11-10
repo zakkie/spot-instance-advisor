@@ -49,7 +49,7 @@ deps:
 .PHONY: devel-deps
 devel-deps: deps
 	go install \
-	 github.com/Songmu/make2help/cmd/make2help@HEAD
+	 github.com/Songmu/make2help/cmd/make2help@latest
 
 ## Help
 .PHONY: help
