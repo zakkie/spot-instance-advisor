@@ -10,8 +10,25 @@ go install github.com/zakkie/spot-instance-advisor/cmd/spot-instance-advisor@lat
 
 ## Usage
 
-```
+```sh
 spot-instance-advisor | sort -n -k 2,2 -r
+```
+
+another options:
+
+```sh
+spot-instance-advisor -help
+Usage of ./bin/spot-instance-advisor:
+  -max-memory int
+        Memory in GB (default 32)
+  -max-vcpus int
+        Number of CPUs (default 4)
+  -min-memory int
+        Memory in GB (default 16)
+  -min-vcpus int
+        Number of CPUs (default 4)
+  -region string
+        AWS region (default "us-west-2")
 ```
 
 ### pre-conditions

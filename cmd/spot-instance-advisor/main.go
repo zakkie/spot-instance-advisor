@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -62,11 +64,23 @@ func removeDuplicates(price []SpotPrice) []SpotPrice {
 	return result
 }
 
-func getInstanceTypes(region string) ([]string, error) {
+func getInstanceTypes(region string, minVcpus, maxVcpus, minMemory, maxMemory int) ([]string, error) {
+	var vcpuValues []string
+	var memoryValues []string
+	for i := minVcpus; i <= maxVcpus; i++ {
+		vcpuValues = append(vcpuValues, fmt.Sprintf("%d", i))
+	}
+	for i := minMemory; i <= maxMemory; i++ {
+		memoryValues = append(memoryValues, fmt.Sprintf("%d", i*1024))
+	}
+	vcpuSpec := strings.Join(vcpuValues, ",")
+	memorySpec := strings.Join(memoryValues, ",")
+	vcpuFilter := fmt.Sprintf("Name=vcpu-info.default-vcpus,Values=%s", vcpuSpec)
+	memoryFilter := fmt.Sprintf("Name=memory-info.size-in-mib,Values=%s", memorySpec)
+
 	// get instance types with 4-8 vCPUs and 16-32 GB memory
 	command := []string{"aws", "ec2", "describe-instance-types",
-		"--filters", "Name=vcpu-info.default-cores,Values=4,5,6,7,8",
-		"Name=memory-info.size-in-mib,Values=16384,32768",
+		"--filters", vcpuFilter, memoryFilter,
 		"--region", region,
 		"--query", "InstanceTypes[*].InstanceType", "--output", "json"}
 	output, err := runCommandWithArgs(command)
@@ -152,19 +166,25 @@ func getIntrrupData(region string) (map[string]InterruptData, map[int]string, er
 }
 
 func main() {
-	region := "us-west-2"
+	region := flag.String("region", "us-west-2", "AWS region")
+	minVcpus := flag.Int("min-vcpus", 4, "Number of CPUs")
+	maxVcpus := flag.Int("max-vcpus", 4, "Number of CPUs")
+	minMemory := flag.Int("min-memory", 16, "Memory in GB")
+	maxMemory := flag.Int("max-memory", 32, "Memory in GB")
 
-	instanceTypes, err := getInstanceTypes(region)
+	flag.Parse()
+
+	instanceTypes, err := getInstanceTypes(*region, *minVcpus, *maxVcpus, *minMemory, *maxMemory)
 	if err != nil {
 		log.Fatalf("Error getting instance types: %s", err)
 	}
 
-	prices, err := getSpotPrices(instanceTypes, region)
+	prices, err := getSpotPrices(instanceTypes, *region)
 	if err != nil {
 		log.Fatalf("Error getting spot prices: %s", err)
 	}
 
-	interruptData, rangesMap, err := getIntrrupData(region)
+	interruptData, rangesMap, err := getIntrrupData(*region)
 	if err != nil {
 		log.Fatalf("Error getting interrupt data: %s", err)
 	}

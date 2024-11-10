@@ -24,10 +24,10 @@ bin/%: cmd/%/main.go
 .PHONY: build
 build: bin/$(NAME)
 
-## Run
+## Run with arguments (ARGS="arg1 arg2")
 .PHONY: run
 run: build
-	./bin/$(NAME)
+	./bin/$(NAME) $(ARGS)
 
 ## Run tests
 .PHONY: test
